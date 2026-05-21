@@ -1,0 +1,875 @@
+{
+  "name": "Lead Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-form",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -672,
+        -32
+      ],
+      "id": "8d20f380-5c2e-457e-8c2e-23219be7d969",
+      "name": "Form Webhook",
+      "webhookId": "96bb70c9-b9b3-48fd-a9c1-879a4d6c9192"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json.body;\n\nconst prompt = `Classify this inbound inquiry from a contact form. Return ONLY valid JSON.\n\nForm data:\n- Name: ${data.name}\n- Email: ${data.email}\n- Company: ${data.company || 'not provided'}\n- Inquiry type: ${data.inquiry_type}\n- Message: ${data.message}\n\nClassify into ONE of these categories:\n- \"urgent\": real business inquiry with budget signals (mentions money, deadlines, specific timelines) OR high-fit project request\n- \"regular\": legitimate inquiry without urgency signals\n- \"newsletter\": just wants to subscribe to newsletter or join mailing list\n- \"spam\": obvious spam, vendor pitch, irrelevant, suspicious content\n\nAlso score:\n- urgency_score: 1-10 (10 = needs immediate response)\n- estimated_budget: extract dollar amount if mentioned, else 0\n- key_signals: array of 1-3 specific words/phrases from message that drove the decision\n\nReturn JSON in this exact structure:\n{\n  \"category\": \"urgent/regular/newsletter/spam\",\n  \"urgency_score\": numeric,\n  \"estimated_budget\": numeric,\n  \"key_signals\": [\"signal1\", \"signal2\"],\n  \"suggested_reply_tone\": \"executive/consultative/friendly/polite_decline\",\n  \"reasoning\": \"1 sentence why\"\n}`;\n\nconst response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.groq.com/openai/v1/chat/completions',\n  headers: {\n    'Authorization': 'Bearer YOUR_GROQ_API_KEY_HERE',\n    'Content-Type': 'application/json'\n  },\n  body: {\n    model: 'llama-3.3-70b-versatile',\n    messages: [{ role: 'user', content: prompt }],\n    temperature: 0.1,\n    response_format: { type: 'json_object' }\n  },\n  json: true\n});\n\nconst parsed = JSON.parse(response.choices[0].message.content);\n\nreturn {\n  json: {\n    category: parsed.category || 'regular',\n    urgency_score: parsed.urgency_score || 0,\n    estimated_budget: parsed.estimated_budget || 0,\n    key_signals: (parsed.key_signals || []).join(', '),\n    suggested_reply_tone: parsed.suggested_reply_tone || 'consultative',\n    reasoning: parsed.reasoning || '',\n    name: data.name,\n    email: data.email,\n    company: data.company || '',\n    inquiry_type: data.inquiry_type,\n    message: data.message,\n    submitted_at: data.timestamp\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        -32
+      ],
+      "id": "527934dc-5e87-4abb-9677-e40340a9b116",
+      "name": "Classify Inquiry"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "urgent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "c9f5f605-f01a-43cd-b487-fc7fabb2b08d"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "urgent"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "9d19f721-b78d-4672-adfd-1b5ddac3791e",
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "regular",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "regular"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "5d3ebf0c-773e-4785-b293-5fb4b34984c1",
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "newsletter",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "=newsletter"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "e38248d9-51b5-4d3c-b66e-02a82b9c3e89",
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "spam",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "spam"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -304,
+        -32
+      ],
+      "id": "f2906a7e-7eeb-4dab-8356-95b58af5e44c",
+      "name": "Route by Category"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0B496ERQVC",
+          "mode": "list",
+          "cachedResultName": "lead-automation"
+        },
+        "text": "=URGENT LEAD: {{ $json.name }} ({{ $json.email }}) - {{ $json.message }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        0,
+        -384
+      ],
+      "id": "78962334-93c6-4713-9c94-21634a958760",
+      "name": "Send a message",
+      "webhookId": "04d93157-0bc1-4fab-b51b-e5b26970fd8b",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "DjLIEb2oDF4ZdV6x",
+          "name": "Slack account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nconst prompt = `Write a brief, warm reply to this inquiry. The customer is interested but not urgent.\n\nCustomer name: ${data.name}\nCustomer message: ${data.message}\nInquiry type: ${data.inquiry_type}\n\nWrite in a ${data.suggested_reply_tone || 'consultative'} tone. Include:\n1. Personal greeting using their name\n2. Acknowledge what they're interested in (1-2 sentences)\n3. Offer a discovery call link\n4. Friendly close\n\nKeep it under 120 words. Sign as \"Basant\" from \"Basant Automation Studio\".\n\nReturn ONLY the email body text, no subject line, no markdown formatting.`;\n\nconst response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.groq.com/openai/v1/chat/completions',\n  headers: {\n    'Authorization': 'Bearer YOUR_GROQ_API_KEY_HERE',\n    'Content-Type': 'application/json'\n  },\n  body: {\n    model: 'llama-3.3-70b-versatile',\n    messages: [{ role: 'user', content: prompt }],\n    temperature: 0.7\n  },\n  json: true\n});\n\nconst replyText = response.choices[0].message.content;\n\nreturn {\n  json: {\n    ...data,\n    reply_body: replyText,\n    calendly_url: 'https://calendly.com/your-link-here'\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        -192
+      ],
+      "id": "2a70619d-59f8-4848-aac8-034f53a4f69f",
+      "name": "Generate Reply"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "Re: your inquiry — let's chat",
+        "message": "=={{ '<p>' + $json.reply_body.replace(/\\n/g, '<br>') + '</p><p><a href=\"' + $json.calendly_url + '\">Book a 30-min call →</a></p>' }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        160,
+        -256
+      ],
+      "id": "dc5a629f-ef3d-4685-ae05-7bd1d2b7d387",
+      "name": "Send Auto-Reply",
+      "webhookId": "47252f96-2c69-48db-ba92-7f491f8f5341",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dcGfEip7Wfw4RMg7",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "16X4GxDXPrcJIefKM1xba4YwNmGkxEceNtQ-vOyXRsiE",
+          "mode": "list",
+          "cachedResultName": "Lead Submissions",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16X4GxDXPrcJIefKM1xba4YwNmGkxEceNtQ-vOyXRsiE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16X4GxDXPrcJIefKM1xba4YwNmGkxEceNtQ-vOyXRsiE/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "submitted_at": "={{ $('Generate Reply').item.json.submitted_at }}",
+            "category": "={{ $('Generate Reply').item.json.category }}",
+            "name": "={{ $('Generate Reply').item.json.name }}",
+            "email": "={{ $('Generate Reply').item.json.email }}",
+            "company": "={{ $('Generate Reply').item.json.company }}",
+            "inquiry_type": "={{ $('Generate Reply').item.json.inquiry_type }}",
+            "message": "={{ $('Generate Reply').item.json.message }}",
+            "urgency_score": "={{ $('Generate Reply').item.json.urgency_score }}",
+            "estimated_budget": "={{ $('Generate Reply').item.json.estimated_budget }}",
+            "reasoning": "={{ $('Generate Reply').item.json.reasoning }}",
+            "reply_sent": "Yes"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "inquiry_type",
+              "displayName": "inquiry_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "urgency_score",
+              "displayName": "urgency_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "estimated_budget",
+              "displayName": "estimated_budget",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reasoning",
+              "displayName": "reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reply_sent",
+              "displayName": "reply_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "threadId",
+              "displayName": "threadId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "labelIds",
+              "displayName": "labelIds",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        352,
+        -272
+      ],
+      "id": "8734ce36-ed9b-48eb-8e94-931a9570dbe3",
+      "name": "Log Regular Lead",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "KUNoodGEpIlDbduq",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "16X4GxDXPrcJIefKM1xba4YwNmGkxEceNtQ-vOyXRsiE",
+          "mode": "list",
+          "cachedResultName": "Lead Submissions",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16X4GxDXPrcJIefKM1xba4YwNmGkxEceNtQ-vOyXRsiE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16X4GxDXPrcJIefKM1xba4YwNmGkxEceNtQ-vOyXRsiE/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "submitted_at": "={{ $('Classify Inquiry').item.json.submitted_at }}",
+            "category": "={{ $('Classify Inquiry').item.json.category }}",
+            "name": "={{ $('Classify Inquiry').item.json.name }}",
+            "email": "={{ $('Classify Inquiry').item.json.email }}",
+            "company": "={{ $('Classify Inquiry').item.json.company }}",
+            "inquiry_type": "={{ $('Classify Inquiry').item.json.inquiry_type }}",
+            "message": "={{ $('Classify Inquiry').item.json.message }}",
+            "urgency_score": "={{ $('Classify Inquiry').item.json.urgency_score }}",
+            "estimated_budget": "={{ $('Classify Inquiry').item.json.estimated_budget }}",
+            "reasoning": "={{ $('Classify Inquiry').item.json.reasoning }}",
+            "reply_sent": "No"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "inquiry_type",
+              "displayName": "inquiry_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency_score",
+              "displayName": "urgency_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estimated_budget",
+              "displayName": "estimated_budget",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reasoning",
+              "displayName": "reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reply_sent",
+              "displayName": "reply_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "threadId",
+              "displayName": "threadId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "labelIds",
+              "displayName": "labelIds",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        112,
+        -64
+      ],
+      "id": "4a372c17-719b-4f67-b8d6-cd571b607d02",
+      "name": "Log Newsletter Signup",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "KUNoodGEpIlDbduq",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "16X4GxDXPrcJIefKM1xba4YwNmGkxEceNtQ-vOyXRsiE",
+          "mode": "list",
+          "cachedResultName": "Lead Submissions",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16X4GxDXPrcJIefKM1xba4YwNmGkxEceNtQ-vOyXRsiE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16X4GxDXPrcJIefKM1xba4YwNmGkxEceNtQ-vOyXRsiE/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "submitted_at": "={{ $('Classify Inquiry').item.json.submitted_at }}",
+            "category": "={{ $('Classify Inquiry').item.json.category }}",
+            "name": "={{ $('Classify Inquiry').item.json.name }}",
+            "email": "={{ $('Classify Inquiry').item.json.email }}",
+            "company": "={{ $('Classify Inquiry').item.json.company }}",
+            "inquiry_type": "={{ $('Classify Inquiry').item.json.inquiry_type }}",
+            "message": "={{ $('Classify Inquiry').item.json.message }}",
+            "urgency_score": "={{ $('Classify Inquiry').item.json.urgency_score }}",
+            "estimated_budget": "={{ $('Classify Inquiry').item.json.estimated_budget }}",
+            "reasoning": "={{ $('Classify Inquiry').item.json.reasoning }}",
+            "reply_sent": "No"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "inquiry_type",
+              "displayName": "inquiry_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency_score",
+              "displayName": "urgency_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estimated_budget",
+              "displayName": "estimated_budget",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reasoning",
+              "displayName": "reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reply_sent",
+              "displayName": "reply_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "threadId",
+              "displayName": "threadId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "labelIds",
+              "displayName": "labelIds",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        32,
+        96
+      ],
+      "id": "fedddefe-17c8-4c0e-9b0a-fc7fdf5ad7c4",
+      "name": "Log Spam",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "KUNoodGEpIlDbduq",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Form Webhook": {
+      "main": [
+        [
+          {
+            "node": "Classify Inquiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Inquiry": {
+      "main": [
+        [
+          {
+            "node": "Route by Category",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Category": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Newsletter Signup",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Spam",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Reply": {
+      "main": [
+        [
+          {
+            "node": "Send Auto-Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Auto-Reply": {
+      "main": [
+        [
+          {
+            "node": "Log Regular Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d869f95c-eafd-4fc1-8008-68ce9d1286af",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "id": "4N9TTT57Mix3If1f",
+  "tags": []
+}

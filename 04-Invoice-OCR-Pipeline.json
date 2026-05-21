@@ -1,0 +1,383 @@
+{
+  "name": "Invoice OCR Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "Inbox - Invoices",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/YOUR_GOOGLE_DRIVE_FOLDER_ID_HERE"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        -832,
+        -64
+      ],
+      "id": "f82e105f-0220-401f-929a-3ed6af5fb469",
+      "name": "Google Drive Trigger",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "pQmuJhj0Ni97dHWz",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -688,
+        -224
+      ],
+      "id": "69585e3e-df70-43ec-a360-f6c83c8612c2",
+      "name": "Download Innvoice pdf",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "pQmuJhj0Ni97dHWz",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.ocr.space/parse/image",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_OCRSPACE_API_KEY_HERE"
+            },
+            {
+              "name": "language",
+              "value": "eng"
+            },
+            {
+              "name": "isOverlayRequired",
+              "value": "false"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -640,
+        96
+      ],
+      "id": "1e52c6ec-3890-4966-a0ec-b1210338ee33",
+      "name": "Extract Text via OCR"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "groqApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -448,
+        48
+      ],
+      "id": "1ebf565f-11fb-460e-9193-8539ec388e08",
+      "name": "HTTP Request",
+      "credentials": {
+        "groqApi": {
+          "id": "irrXLwkng5ANv85V",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsedText = $input.first().json.ParsedResults[0].ParsedText;\n\nconst payload = {\n  model: \"llama-3.3-70b-versatile\",\n  temperature: 0.1,\n  messages: [\n    {\n      role: \"system\",\n      content: \"You are an invoice data extractor. Extract structured data from invoice text and return ONLY valid JSON with no explanation or markdown.\"\n    },\n    {\n      role: \"user\",\n      content: `Extract these fields and return as JSON only:\\n- vendor_name\\n- invoice_number\\n- invoice_date\\n- due_date\\n- total_amount\\n- currency\\n- bill_to_name\\n- bill_to_email\\n\\nInvoice text:\\n${parsedText}`\n    }\n  ]\n};\n\nreturn [{ json: { body: JSON.stringify(payload) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -496,
+        -208
+      ],
+      "id": "fb33e05c-1ea3-4cbc-83b9-7f29be647c57",
+      "name": "Prepare Groq Payload"
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = $input.first().json.choices[0].message.content;\n\n// Strip markdown code fences if present\nconst cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n\nconst invoice = JSON.parse(cleaned);\n\nreturn [{\n  json: {\n    vendor_name: invoice.vendor_name,\n    invoice_number: invoice.invoice_number,\n    invoice_date: invoice.invoice_date,\n    due_date: invoice.due_date,\n    total_amount: invoice.total_amount,\n    currency: invoice.currency,\n    bill_to_name: invoice.bill_to_name,\n    bill_to_email: invoice.bill_to_email,\n    processed_at: new Date().toISOString(),\n    source_file: \"invoice_\" + new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        -176
+      ],
+      "id": "59ad8096-8ee6-40ce-b926-f9d67414db18",
+      "name": "Parse Groq Response"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "Invoice OCR Pipeline",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_HERE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_HERE/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "vendor_name": "={{ $json.vendor_name }}",
+            "invoice_number": "={{ $json.invoice_number }}",
+            "invoice_date": "={{ $json.invoice_date }}",
+            "due_date": "={{ $json.due_date }}",
+            "total_amount": "={{ $json.total_amount }}",
+            "currency": "={{ $json.currency }}",
+            "bill_to_name": "={{ $json.bill_to_name }}",
+            "bill_to_email": "={{ $json.bill_to_email }}",
+            "processed_at": "={{ $json.processed_at }}",
+            "source_file": "={{ $json.source_file }}"
+          },
+          "matchingColumns": [
+            "invoice_number"
+          ],
+          "schema": [
+            {
+              "id": "vendor_name",
+              "displayName": "vendor_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "invoice_number",
+              "displayName": "invoice_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "invoice_date",
+              "displayName": "invoice_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "due_date",
+              "displayName": "due_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "total_amount",
+              "displayName": "total_amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "currency",
+              "displayName": "currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "bill_to_name",
+              "displayName": "bill_to_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "bill_to_email",
+              "displayName": "bill_to_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_file",
+              "displayName": "source_file",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -96,
+        -176
+      ],
+      "id": "88efd65a-fe9e-41ae-9078-81bad8f5a72b",
+      "name": "Log to Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "KUNoodGEpIlDbduq",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Download Innvoice pdf",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Innvoice pdf": {
+      "main": [
+        [
+          {
+            "node": "Extract Text via OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text via OCR": {
+      "main": [
+        [
+          {
+            "node": "Prepare Groq Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Groq Payload": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Parse Groq Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Groq Response": {
+      "main": [
+        [
+          {
+            "node": "Log to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "55d2a111-c0e5-4651-9a8b-7309fe2310a9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "id": "O6J1pC9LzIy6lfjp",
+  "tags": []
+}

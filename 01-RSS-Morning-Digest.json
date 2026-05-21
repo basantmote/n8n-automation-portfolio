@@ -1,0 +1,290 @@
+{
+  "name": "RSS Morning Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -688,
+        -64
+      ],
+      "id": "f3913017-40fd-412a-9ee4-cb0001c4aa28",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://feeds.feedburner.com/TechCrunch",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -320,
+        -336
+      ],
+      "id": "7432485e-b50a-4639-b335-a49eccc0323c",
+      "name": "RSS - TechCrunch"
+    },
+    {
+      "parameters": {
+        "url": "https://feeds.bbci.co.uk/news/technology/rss.xml",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -320,
+        16
+      ],
+      "id": "45d58870-5458-46d1-b10e-0ac8fa22de06",
+      "name": "RSS - VentureBeat"
+    },
+    {
+      "parameters": {
+        "url": "https://blog.n8n.io/rss/",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -320,
+        192
+      ],
+      "id": "d5502d4a-3717-4b8e-8520-afdd4d2bc17e",
+      "name": "RSS - n8nBlog"
+    },
+    {
+      "parameters": {
+        "url": "https://english.onlinekhabar.com/feed",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -288,
+        352
+      ],
+      "id": "2cc095f4-0792-4e74-b3cc-e6462887b022",
+      "name": "RSS onlinekhabar"
+    },
+    {
+      "parameters": {
+        "numberInputs": 5
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        16,
+        32
+      ],
+      "id": "29563962-8706-482f-8c2e-4c4abe94508c",
+      "name": "Merge Feeds"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// Group articles by source feed\nconst grouped = {};\nfor (const item of items) {\n  const source = item.json.feed?.title || 'Other';\n  if (!grouped[source]) grouped[source] = [];\n  grouped[source].push(item.json);\n}\n\n// Build HTML\nlet html = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <style>\n    body { font-family: Arial, sans-serif; max-width: 650px; \n           margin: 0 auto; background: #f5f5f5; padding: 20px; }\n    .header { background: #1a1a2e; color: white; padding: 20px; \n              border-radius: 8px 8px 0 0; text-align: center; }\n    .header h1 { margin: 0; font-size: 22px; }\n    .header p { margin: 5px 0 0; opacity: 0.7; font-size: 13px; }\n    .section { background: white; margin-top: 2px; padding: 16px 20px; }\n    .section h2 { font-size: 14px; color: #666; text-transform: uppercase; \n                  letter-spacing: 1px; margin: 0 0 12px; \n                  border-bottom: 2px solid #1a1a2e; padding-bottom: 6px; }\n    .article { margin-bottom: 14px; padding-bottom: 14px; \n               border-bottom: 1px solid #eee; }\n    .article:last-child { border-bottom: none; margin-bottom: 0; }\n    .article a { color: #1a1a2e; font-size: 15px; font-weight: bold; \n                 text-decoration: none; line-height: 1.4; }\n    .article a:hover { text-decoration: underline; }\n    .article .meta { font-size: 12px; color: #999; margin-top: 4px; }\n    .article .snippet { font-size: 13px; color: #555; \n                        margin-top: 6px; line-height: 1.5; }\n    .footer { background: #1a1a2e; color: white; padding: 14px; \n              border-radius: 0 0 8px 8px; text-align: center; \n              font-size: 12px; opacity: 0.8; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <h1>🌅 Your Morning Tech Digest</h1>\n    <p>${new Date().toLocaleDateString('en-US', { \n      weekday: 'long', year: 'numeric', \n      month: 'long', day: 'numeric' \n    })} • Kathmandu</p>\n  </div>\n`;\n\n// Add each feed section\nfor (const [source, articles] of Object.entries(grouped)) {\n  html += `\n  <div class=\"section\">\n    <h2>${source}</h2>\n  `;\n  \n  for (const article of articles) {\n    const date = article.pubDate \n      ? new Date(article.pubDate).toLocaleTimeString('en-US', \n          { hour: '2-digit', minute: '2-digit' }) \n      : '';\n    const snippet = article.contentSnippet \n      ? article.contentSnippet.substring(0, 120) + '...' \n      : '';\n    \n    html += `\n    <div class=\"article\">\n      <a href=\"${article.link}\" target=\"_blank\">${article.title}</a>\n      <div class=\"meta\">Published at ${date}</div>\n      ${snippet ? `<div class=\"snippet\">${snippet}</div>` : ''}\n    </div>\n    `;\n  }\n  \n  html += `</div>`;\n}\n\nconst totalCount = items.length;\n\nhtml += `\n  <div class=\"footer\">\n    ${totalCount} articles curated for you today · Built with n8n\n  </div>\n</body>\n</html>\n`;\n\nreturn [{ json: { html, totalCount, date: new Date().toISOString() } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        48
+      ],
+      "id": "02e4579b-10d0-4419-8dc3-2b145d25108b",
+      "name": "Build HTML Email"
+    },
+    {
+      "parameters": {
+        "sendTo": "YOUR_EMAIL_HERE",
+        "subject": "News",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        656,
+        48
+      ],
+      "id": "8a52960b-002c-407d-b483-d7de8c278fbe",
+      "name": "Send Gmail Digest",
+      "webhookId": "de86a007-9761-49f5-9b7a-9f1f86c95e6d",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dcGfEip7Wfw4RMg7",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst cutoff = Date.now() - (24 * 60 * 60 * 1000);\n\n// Keywords to keep (lowercase)\nconst keywords = [\n  'automation', 'ai', 'n8n', 'workflow', 'nepal',\n  'fintech', 'banking', 'claude', 'openai', 'llm'\n];\n\n// Step 1: filter by date AND keyword\nlet filtered = items.filter(item => {\n  const data = item.json;\n  \n  // Date check\n  if (!data.pubDate) return false;\n  const d = new Date(data.pubDate);\n  if (isNaN(d.getTime())) return false;\n  if (d.getTime() <= cutoff) return false;\n  \n  // Keyword check — match in title or content\n  const haystack = (\n    (data.title || '') + ' ' + \n    (data.contentSnippet || '') + ' ' +\n    (data.content || '')\n  ).toLowerCase();\n  \n  return keywords.some(kw => haystack.includes(kw));\n});\n\n// Step 2: deduplicate by URL\nconst seen = new Set();\nconst unique = [];\nfor (const item of filtered) {\n  const url = (item.json.link || '').trim().toLowerCase().replace(/\\/$/, '');\n  if (url && !seen.has(url)) {\n    seen.add(url);\n    unique.push(item);\n  }\n}\n\n// Step 3: sort by date, newest first\nunique.sort((a, b) => {\n  const dateA = new Date(a.json.pubDate);\n  const dateB = new Date(b.json.pubDate);\n  return dateB - dateA;\n});\n\n// Step 4: limit to top 15\nconst limited = unique.slice(0, 15);\n\n// Step 5: add parsed date for HTML template\nreturn limited.map(item => ({\n  json: {\n    ...item.json,\n    pubDateParsed: new Date(item.json.pubDate).toISOString()\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        32
+      ],
+      "id": "f0e072f5-5f95-4f6e-bdde-5a9645368761",
+      "name": "Parse dates"
+    },
+    {
+      "parameters": {
+        "url": " http://news.ycombinator.com/rss",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -320,
+        -144
+      ],
+      "id": "58673265-bae3-46cd-ba42-046bd4993e88",
+      "name": "RSS - HackerNews"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "RSS - TechCrunch": {
+      "main": [
+        [
+          {
+            "node": "Merge Feeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS - VentureBeat": {
+      "main": [
+        [
+          {
+            "node": "Merge Feeds",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "RSS - TechCrunch",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS - VentureBeat",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS - n8nBlog",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS onlinekhabar",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS - HackerNews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS - n8nBlog": {
+      "main": [
+        [
+          {
+            "node": "Merge Feeds",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "RSS onlinekhabar": {
+      "main": [
+        [
+          {
+            "node": "Merge Feeds",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Merge Feeds": {
+      "main": [
+        [
+          {
+            "node": "Parse dates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build HTML Email": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse dates": {
+      "main": [
+        [
+          {
+            "node": "Build HTML Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS - HackerNews": {
+      "main": [
+        [
+          {
+            "node": "Merge Feeds",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "93592925-b39f-488a-a1cf-73ccf49295a9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "id": "EDQqQ78sxq1hC2te",
+  "tags": []
+}

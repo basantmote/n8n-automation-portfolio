@@ -1,0 +1,176 @@
+{
+  "name": "AI Email Auto-Responder",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "labelIds": [
+            "INBOX"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -1008,
+        -80
+      ],
+      "id": "8ae46e46-67a5-4533-8c28-b8156c4ea484",
+      "name": "New Email Received",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dcGfEip7Wfw4RMg7",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "bf5fc13f-334d-4ea5-b54d-63ff983f0236",
+              "leftValue": "={{ $json.labels.map(l => l.name).join(',') }}",
+              "rightValue": "CATEGORY_PROMOTIONS",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            },
+            {
+              "id": "9b2f9c74-8bb5-4216-999c-5e2ef29fc60c",
+              "leftValue": "={{ $json.labels.map(l => l.name).join(',') }}",
+              "rightValue": "CATEGORY_UPDATES",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -848,
+        -80
+      ],
+      "id": "4188f78c-3de7-4c87-b78f-1d95339995ba",
+      "name": "Is Real Inquiry?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are [YOUR NAME], a [YOUR LOCATION]-based automation engineer. You help small businesses automate repetitive tasks using n8n and AI. Write professional, friendly, concise email replies. Always end with: 'Best regards, [YOUR NAME] | Automation Engineer | [YOUR EMAIL]'\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Write a reply to this email:\\n\\nFrom: {{ $('New Email Received').item.json.From }}\\nSubject: {{ $('New Email Received').item.json.Subject }}\\n\\nMessage:\\n{{ $('New Email Received').item.json.snippet }}\"\n    }\n  ],\n  \"temperature\": 0.7,\n  \"max_tokens\": 500\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -640,
+        -176
+      ],
+      "id": "936cdd9a-6936-453f-9127-ecd256b13207",
+      "name": "Generate AI Reply",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "uCxWuTPff6lgLt6o",
+          "name": "Groq API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "=Re: {{ $('New Email Received').item.json.Subject }}",
+        "message": "={{ $('Generate AI Reply').item.json.choices[0].message.content }}",
+        "options": {
+          "sendTo": "={{ $('New Email Received').item.json.From }}"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -432,
+        -176
+      ],
+      "id": "28ebbb2b-0a60-460f-b224-047101be3fd8",
+      "name": "Save as Gmail Draft",
+      "webhookId": "a9e2bc64-7dce-4e41-a7f4-ff7651f09f1d",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dcGfEip7Wfw4RMg7",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "New Email Received": {
+      "main": [
+        [
+          {
+            "node": "Is Real Inquiry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Real Inquiry?": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Reply": {
+      "main": [
+        [
+          {
+            "node": "Save as Gmail Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "233bfd6a-8166-4adf-a237-d70d605ffd3c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "id": "KWnnVwJfXt05IaVN",
+  "tags": []
+}

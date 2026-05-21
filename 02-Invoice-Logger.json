@@ -1,0 +1,255 @@
+{
+  "name": "Invoice Logger",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -608,
+        -32
+      ],
+      "id": "936de0d5-45ec-4673-b970-a9a50aeb33f3",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": 10,
+        "filters": {
+          "labelIds": [
+            "SENT"
+          ],
+          "q": "invoice OR receipt OR bill"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -400,
+        -32
+      ],
+      "id": "b205063c-6cc4-4595-bffb-32508b38b5f8",
+      "name": "Get many messages",
+      "webhookId": "0ad7e264-36bc-40dc-bc80-08fdd818a085",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dcGfEip7Wfw4RMg7",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nconst subject = item.Subject || item.subject || '';\nconst from = item.From || item.from || '';\nconst body = (item.snippet || item.text || '').substring(0, 2000);\n\nconst prompt = `Extract invoice details from this email. Return ONLY valid JSON, no markdown.\n\nEmail subject: ${subject}\nEmail from: ${from}\nEmail body: ${body}\n\nReturn JSON in this exact structure:\n{\n  \"is_invoice\": true or false,\n  \"vendor_name\": \"company name or empty string\",\n  \"amount\": numeric value only or 0,\n  \"currency\": \"USD/EUR/NPR or empty string\",\n  \"invoice_date\": \"YYYY-MM-DD or empty string\",\n  \"confidence\": \"high/medium/low\"\n}`;\n\nconst response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.groq.com/openai/v1/chat/completions',\n  headers: {\n    'Authorization': 'Bearer YOUR_GROQ_API_KEY_HERE',\n    'Content-Type': 'application/json'\n  },\n  body: {\n    model: 'llama-3.3-70b-versatile',\n    messages: [{ role: 'user', content: prompt }],\n    temperature: 0.1,\n    response_format: { type: 'json_object' }\n  },\n  json: true\n});\n\nconst parsed = JSON.parse(response.choices[0].message.content);\n\nreturn {\n  json: {\n    is_invoice: parsed.is_invoice === true,\n    vendor_name: parsed.vendor_name || '',\n    amount: parsed.amount || 0,\n    currency: parsed.currency || '',\n    invoice_date: parsed.invoice_date || '',\n    confidence: parsed.confidence || 'low',\n    sender_email: from,\n    subject: subject,\n    received_at: new Date(parseInt(item.internalDate || Date.now())).toISOString(),\n    message_id: item.id || ''\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        -32
+      ],
+      "id": "41426a40-d947-4408-af36-4874690c1517",
+      "name": "call Grok"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "Invoice Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_HERE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_HERE/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "A: Date Received": "=Date Received     →  {{ $json.received_at }}\nSender Email      →  {{ $json.sender_email }}\nVendor Name       →  {{ $json.vendor_name }}\nInvoice Amount    →  {{ $json.amount }}\nCurrency          →  {{ $json.currency }}\nInvoice Date      →  {{ $json.invoice_date }}\nSubject           →  {{ $json.subject }}\nGmail Message ID  →  {{ $json.message_id }}"
+          },
+          "matchingColumns": [
+            "A: Date Received"
+          ],
+          "schema": [
+            {
+              "id": "A: Date Received",
+              "displayName": "A: Date Received",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        -128
+      ],
+      "id": "93660122-3c05-4023-94fc-6f4d696268fc",
+      "name": "Append or update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "KUNoodGEpIlDbduq",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().filter(item => item.json.is_invoice === true);"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        -32
+      ],
+      "id": "f54232b3-1527-4491-bb16-8d0ccdf2f025",
+      "name": "keep only invoice"
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.message_id }}",
+        "labelIds": [
+          "Label_6534719030841536070"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        432,
+        -128
+      ],
+      "id": "69c099e0-b005-4707-9448-6040911c4893",
+      "name": "Add label to message",
+      "webhookId": "7590e5ec-5d55-4f35-87ce-544352218f15",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dcGfEip7Wfw4RMg7",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.message_id }}",
+        "labelIds": [
+          "Label_6534719030841536070"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        272,
+        16
+      ],
+      "id": "f69a3ba0-95c2-47f7-8db5-b619d94f471a",
+      "name": "Add label to message1",
+      "webhookId": "67de1228-564b-4456-8601-e06476ddccb2",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dcGfEip7Wfw4RMg7",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get many messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many messages": {
+      "main": [
+        [
+          {
+            "node": "call Grok",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "call Grok": {
+      "main": [
+        [
+          {
+            "node": "keep only invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "keep only invoice": {
+      "main": [
+        [
+          {
+            "node": "Add label to message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append or update row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Add label to message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add label to message1": {
+      "main": [
+        [
+          {
+            "node": "Append or update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b39faa77-ab77-4bd6-80b3-b17e28322b8f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "id": "S9wpv7JT6qmV1syA",
+  "tags": []
+}

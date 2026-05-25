@@ -1,0 +1,282 @@
+{
+  "name": "AI Lead Enrichment",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "fromFile",
+        "binaryPropertyName": "data"
+      },
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-800, 0],
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Manual Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Read CSV binary and parse into lead objects\nconst binaryData = $input.first().binary?.data;\n\nlet csvText;\nif (binaryData) {\n  const buffer = await this.helpers.getBinaryDataBuffer($input.first(), 'data');\n  csvText = buffer.toString('utf-8');\n} else {\n  // Fallback: sample data for testing without a real CSV\n  csvText = `company_name,first_name,last_name,email,domain,phone,city,state\nABC Remodeling,John,Smith,john@abcremodeling.com,abcremodeling.com,555-1234,Denver,CO\nSunset Home Builders,Maria,Lopez,maria@sunsethb.com,sunsethb.com,555-5678,Austin,TX\nPeak Renovation Co,David,Chen,david@peakreno.com,peakreno.com,555-9012,Seattle,WA`;\n}\n\n// Parse CSV\nconst lines = csvText.trim().split('\\n');\nconst headers = lines[0].split(',').map(h => h.trim().replace(/\"/g, ''));\n\nconst leads = [];\nfor (let i = 1; i < lines.length; i++) {\n  if (!lines[i].trim()) continue;\n  const values = lines[i].split(',').map(v => v.trim().replace(/\"/g, ''));\n  const lead = {};\n  headers.forEach((h, idx) => { lead[h] = values[idx] || ''; });\n  leads.push({ json: lead });\n}\n\nreturn leads;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-608, 0],
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Parse CSV"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [-416, 0],
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Process One by One"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Stage 2: Enrich with Hunter.io (email finder + company data)\n// If you don't have Hunter.io key, this returns the existing email and skips enrichment\nconst lead = $input.first().json;\n\nconst HUNTER_API_KEY = 'YOUR_HUNTER_API_KEY_HERE';\n\nlet enriched = { ...lead };\n\ntry {\n  if (HUNTER_API_KEY !== 'YOUR_HUNTER_API_KEY_HERE' && lead.domain) {\n    // Domain search: get company info + email pattern\n    const domainRes = await this.helpers.httpRequest({\n      method: 'GET',\n      url: `https://api.hunter.io/v2/domain-search?domain=${lead.domain}&api_key=${HUNTER_API_KEY}&limit=1`,\n      json: true\n    });\n\n    const data = domainRes.data || {};\n    enriched.company_industry = data.industry || '';\n    enriched.company_size = data.company_size || '';\n    enriched.email_pattern = data.pattern || '';\n    enriched.linkedin_url = data.linkedin || '';\n\n    // Use found email if original is missing\n    if (!enriched.email && data.emails && data.emails.length > 0) {\n      enriched.email = data.emails[0].value || '';\n    }\n  } else {\n    // No Hunter key — use whatever came from CSV\n    enriched.company_industry = lead.industry || 'home remodeling';\n    enriched.company_size = lead.employee_count || 'unknown';\n    enriched.email_pattern = '';\n    enriched.linkedin_url = '';\n  }\n} catch (err) {\n  enriched.enrichment_error = err.message;\n  enriched.company_industry = '';\n  enriched.company_size = '';\n}\n\nenriched.enriched_at = new Date().toISOString();\n\nreturn { json: enriched };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-224, 0],
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
+      "name": "Enrich with Hunter.io"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Stage 3: Scrape website content for AI analysis\nconst lead = $input.first().json;\n\nlet websiteText = '';\n\ntry {\n  const domain = lead.domain || '';\n  if (!domain) throw new Error('No domain provided');\n\n  const url = domain.startsWith('http') ? domain : `https://${domain}`;\n\n  // Fetch the homepage HTML\n  const response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: url,\n    headers: {\n      'User-Agent': 'Mozilla/5.0 (compatible; LeadEnrichBot/1.0)'\n    },\n    timeout: 10000,\n    ignoreHttpStatusErrors: true\n  });\n\n  // Strip HTML tags and get plain text (max 2000 chars for AI)\n  const raw = typeof response === 'string' ? response : JSON.stringify(response);\n  websiteText = raw\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, '')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim()\n    .substring(0, 2000);\n\n} catch (err) {\n  websiteText = `Could not fetch website: ${err.message}`;\n}\n\nreturn {\n  json: {\n    ...$input.first().json,\n    website_text: websiteText\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-32, 0],
+      "id": "a1b2c3d4-0005-0005-0005-000000000005",
+      "name": "Scrape Website"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Stage 4: AI scoring — same Groq pattern as your Lead Router\nconst lead = $input.first().json;\n\nconst GROQ_API_KEY = 'YOUR_GROQ_API_KEY_HERE';\n\nconst prompt = `You are a lead scoring specialist for a home remodeling SaaS company.\nAnalyze this business and score them as a potential customer. Return ONLY valid JSON.\n\nCompany: ${lead.company_name}\nDomain: ${lead.domain}\nIndustry: ${lead.company_industry || 'unknown'}\nCompany size: ${lead.company_size || 'unknown'}\nLocation: ${lead.city || ''}, ${lead.state || ''}\nWebsite content (first 2000 chars):\n${lead.website_text || 'Not available'}\n\nScore this lead based on these criteria:\n1. Are they in home remodeling, renovation, contracting, or construction? (most important)\n2. Do they appear to be an active business with a real web presence?\n3. Do they seem to be a small-to-mid sized company (not a huge national chain)?\n4. Are there signs they could benefit from lead generation software?\n\nReturn JSON in this exact structure:\n{\n  \"score\": <number 1-10>,\n  \"qualified\": <true if score >= 7, else false>,\n  \"industry_match\": <\"strong\" | \"partial\" | \"none\">,\n  \"business_type\": <1-3 word description, e.g. \"kitchen remodeler\">,\n  \"key_signals\": [\"signal1\", \"signal2\", \"signal3\"],\n  \"disqualify_reason\": <\"\" if qualified, else one sentence why not>,\n  \"reasoning\": <one sentence summary>\n}`;\n\nconst response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.groq.com/openai/v1/chat/completions',\n  headers: {\n    'Authorization': `Bearer ${GROQ_API_KEY}`,\n    'Content-Type': 'application/json'\n  },\n  body: {\n    model: 'llama-3.3-70b-versatile',\n    messages: [{ role: 'user', content: prompt }],\n    temperature: 0.1,\n    response_format: { type: 'json_object' }\n  },\n  json: true\n});\n\nlet parsed;\ntry {\n  parsed = JSON.parse(response.choices[0].message.content);\n} catch (e) {\n  parsed = { score: 0, qualified: false, reasoning: 'Parse error', key_signals: [], disqualify_reason: 'AI parse failed' };\n}\n\nreturn {\n  json: {\n    ...lead,\n    ai_score: parsed.score || 0,\n    ai_qualified: parsed.qualified || false,\n    industry_match: parsed.industry_match || 'none',\n    business_type: parsed.business_type || '',\n    key_signals: (parsed.key_signals || []).join(', '),\n    disqualify_reason: parsed.disqualify_reason || '',\n    score_reasoning: parsed.reasoning || '',\n    scored_at: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [160, 0],
+      "id": "a1b2c3d4-0006-0006-0006-000000000006",
+      "name": "AI Score Lead"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ai_qualified }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true"
+                    },
+                    "id": "qualify-condition-001"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "qualified"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ai_qualified }}",
+                    "rightValue": false,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false"
+                    },
+                    "id": "disqualify-condition-001"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "disqualified"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [352, 0],
+      "id": "a1b2c3d4-0007-0007-0007-000000000007",
+      "name": "Score Gate"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Stage 5: Generate personalized cold email intro — same pattern as your Generate Reply node\nconst lead = $input.first().json;\n\nconst GROQ_API_KEY = 'YOUR_GROQ_API_KEY_HERE';\n\nconst prompt = `You are an expert cold email copywriter for a home remodeling SaaS product.\nWrite a personalized cold email opener for this specific business.\n\nCompany: ${lead.company_name}\nBusiness type: ${lead.business_type || 'home remodeling company'}\nLocation: ${lead.city || ''}, ${lead.state || ''}\nKey signals about them: ${lead.key_signals || ''}\nWebsite summary: ${(lead.website_text || '').substring(0, 500)}\n\nWrite TWO things and return as JSON:\n1. subject_line: A compelling, specific email subject (under 60 chars, no clickbait)\n2. email_intro: First 2-3 sentences of the email body. Must:\n   - Reference something specific about their business (not generic)\n   - Mention a pain point home remodelers face (chasing bad leads, slow follow-up)\n   - Feel human, not like a template\n   - Max 60 words\n\nReturn ONLY valid JSON:\n{\n  \"subject_line\": \"...\",\n  \"email_intro\": \"...\"\n}`;\n\nconst response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.groq.com/openai/v1/chat/completions',\n  headers: {\n    'Authorization': `Bearer ${GROQ_API_KEY}`,\n    'Content-Type': 'application/json'\n  },\n  body: {\n    model: 'llama-3.3-70b-versatile',\n    messages: [{ role: 'user', content: prompt }],\n    temperature: 0.7,\n    response_format: { type: 'json_object' }\n  },\n  json: true\n});\n\nlet parsed;\ntry {\n  parsed = JSON.parse(response.choices[0].message.content);\n} catch (e) {\n  parsed = {\n    subject_line: `Quick question for ${lead.company_name}`,\n    email_intro: `Hi, I came across ${lead.company_name} and wanted to reach out about how we help remodelers get better leads.`\n  };\n}\n\nreturn {\n  json: {\n    ...lead,\n    subject_line: parsed.subject_line || '',\n    email_intro: parsed.email_intro || '',\n    email_generated_at: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [544, -128],
+      "id": "a1b2c3d4-0008-0008-0008-000000000008",
+      "name": "Generate Email Intro"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Stage 6: Push to Instantly API V2\nconst lead = $input.first().json;\n\nconst INSTANTLY_API_KEY = 'YOUR_INSTANTLY_API_KEY_HERE';\nconst CAMPAIGN_ID = 'YOUR_CAMPAIGN_ID_HERE';\n\nconst response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.instantly.ai/api/v2/leads/add',\n  headers: {\n    'Authorization': `Bearer ${INSTANTLY_API_KEY}`,\n    'Content-Type': 'application/json'\n  },\n  body: {\n    campaign_id: CAMPAIGN_ID,\n    leads: [\n      {\n        email: lead.email,\n        first_name: lead.first_name || '',\n        last_name: lead.last_name || '',\n        company_name: lead.company_name || '',\n        website: lead.domain ? `https://${lead.domain}` : '',\n        phone: lead.phone || '',\n        personalization: lead.email_intro || '',\n        custom_variables: {\n          ai_score: String(lead.ai_score || '0'),\n          business_type: lead.business_type || '',\n          industry_match: lead.industry_match || '',\n          key_signals: lead.key_signals || '',\n          subject_line: lead.subject_line || '',\n          city: lead.city || '',\n          state: lead.state || ''\n        }\n      }\n    ]\n  },\n  json: true,\n  ignoreHttpStatusErrors: true\n});\n\nconst success = !response.error && response.leads?.length > 0;\n\nreturn {\n  json: {\n    ...lead,\n    instantly_push_success: success,\n    instantly_response: JSON.stringify(response),\n    pushed_at: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [736, -128],
+      "id": "a1b2c3d4-0009-0009-0009-000000000009",
+      "name": "Push to Instantly"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Qualified Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "pushed_at": "={{ $json.pushed_at }}",
+            "company_name": "={{ $json.company_name }}",
+            "email": "={{ $json.email }}",
+            "domain": "={{ $json.domain }}",
+            "city": "={{ $json.city }}",
+            "state": "={{ $json.state }}",
+            "business_type": "={{ $json.business_type }}",
+            "ai_score": "={{ $json.ai_score }}",
+            "industry_match": "={{ $json.industry_match }}",
+            "key_signals": "={{ $json.key_signals }}",
+            "subject_line": "={{ $json.subject_line }}",
+            "email_intro": "={{ $json.email_intro }}",
+            "instantly_push_success": "={{ $json.instantly_push_success }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [928, -128],
+      "id": "a1b2c3d4-0010-0010-0010-000000000010",
+      "name": "Log Qualified Lead",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "KUNoodGEpIlDbduq",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Disqualified Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "scored_at": "={{ $json.scored_at }}",
+            "company_name": "={{ $json.company_name }}",
+            "email": "={{ $json.email }}",
+            "domain": "={{ $json.domain }}",
+            "ai_score": "={{ $json.ai_score }}",
+            "disqualify_reason": "={{ $json.disqualify_reason }}",
+            "score_reasoning": "={{ $json.score_reasoning }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [544, 128],
+      "id": "a1b2c3d4-0011-0011-0011-000000000011",
+      "name": "Log Disqualified Lead",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "KUNoodGEpIlDbduq",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{ "node": "Parse CSV", "type": "main", "index": 0 }]]
+    },
+    "Parse CSV": {
+      "main": [[{ "node": "Process One by One", "type": "main", "index": 0 }]]
+    },
+    "Process One by One": {
+      "main": [[{ "node": "Enrich with Hunter.io", "type": "main", "index": 0 }]]
+    },
+    "Enrich with Hunter.io": {
+      "main": [[{ "node": "Scrape Website", "type": "main", "index": 0 }]]
+    },
+    "Scrape Website": {
+      "main": [[{ "node": "AI Score Lead", "type": "main", "index": 0 }]]
+    },
+    "AI Score Lead": {
+      "main": [[{ "node": "Score Gate", "type": "main", "index": 0 }]]
+    },
+    "Score Gate": {
+      "main": [
+        [{ "node": "Generate Email Intro", "type": "main", "index": 0 }],
+        [{ "node": "Log Disqualified Lead", "type": "main", "index": 0 }]
+      ]
+    },
+    "Generate Email Intro": {
+      "main": [[{ "node": "Push to Instantly", "type": "main", "index": 0 }]]
+    },
+    "Push to Instantly": {
+      "main": [[{ "node": "Log Qualified Lead", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "04-ai-lead-enrichment-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "id": "04AILeadEnrichment",
+  "tags": []
+}

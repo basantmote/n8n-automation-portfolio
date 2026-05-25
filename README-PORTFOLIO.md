@@ -8,19 +8,16 @@ I'm Basant Mote, a Nepal-based automation engineer with 10 years of experience i
 
 📧 basantmote@gmail.com
 
----
-
 ## Workflows
 
 | # | Workflow | What It Does | Stack | Difficulty |
 |---|---|---|---|---|
-| 01 | [RSS Morning Digest](./01-rss-morning-digest/) | Pulls 5 RSS feeds, filters by keywords, emails a daily digest at 7 AM | n8n, Gmail | Beginner |
-| 02 | [Invoice Email Logger](./02-invoice-logger/) | Scans Gmail for invoices, extracts data with AI, logs to Google Sheets | n8n, Groq, Gmail, Sheets | Intermediate |
-| 03 | [AI Lead Router](./03-ai-lead-router/) | Classifies contact form submissions, routes to Slack/email/sheets by urgency | n8n, Groq, Slack, Gmail, Sheets | Intermediate |
-| 04 | [Invoice OCR Pipeline](./04-invoice-ocr-pipeline/) | Watches Google Drive, OCRs PDF invoices, extracts fields with AI, logs to Sheets | n8n, OCR.space, Groq, Drive, Sheets | Advanced |
-| 05 | [AI Email Auto-Responder](./05-ai-email-autoresponder/) | Monitors inbox, filters real inquiries, drafts AI replies in your voice | n8n, Groq, Gmail | Intermediate |
-
----
+| 01 | RSS Morning Digest | Pulls 5 RSS feeds, filters by keywords, emails a daily digest at 7 AM | n8n, Gmail | Beginner |
+| 02 | Invoice Email Logger | Scans Gmail for invoices, extracts data with AI, logs to Google Sheets | n8n, Groq, Gmail, Sheets | Intermediate |
+| 03 | AI Lead Router | Classifies contact form submissions, routes to Slack/email/sheets by urgency | n8n, Groq, Slack, Gmail, Sheets | Intermediate |
+| 04 | Invoice OCR Pipeline | Watches Google Drive, OCRs PDF invoices, extracts fields with AI, logs to Sheets | n8n, OCR.space, Groq, Drive, Sheets | Advanced |
+| 05 | AI Email Auto-Responder | Monitors inbox, filters real inquiries, drafts AI replies in your voice | n8n, Groq, Gmail | Intermediate |
+| 06 | AI Lead Enrichment | Takes CSV leads, enriches with Hunter.io, scrapes websites, scores with AI, generates cold email intros, pushes qualified leads to Instantly | n8n, Groq, Hunter.io, Instantly, Sheets | Advanced |
 
 ## Tech Stack Used Across Projects
 
@@ -31,8 +28,8 @@ I'm Basant Mote, a Nepal-based automation engineer with 10 years of experience i
 - **Google Drive** — file-based workflow triggers
 - **OCR.space** — PDF and image text extraction
 - **Slack** — real-time notifications
-
----
+- **Hunter.io** — company and email enrichment
+- **Instantly API V2** — cold outreach campaign management
 
 ## How to Use These Workflows
 
@@ -44,8 +41,6 @@ I'm Basant Mote, a Nepal-based automation engineer with 10 years of experience i
 6. Replace all `YOUR_*_HERE` placeholders with your own credentials
 7. Activate
 
----
-
 ## Skills Demonstrated
 
 - Workflow design and automation architecture
@@ -55,8 +50,9 @@ I'm Basant Mote, a Nepal-based automation engineer with 10 years of experience i
 - Conditional routing and data filtering in n8n
 - Gmail inbox management and labeling automation
 - Webhook-driven event processing
-
----
+- REST API integration (Hunter.io, Instantly, Groq, OCR.space)
+- CSV parsing and batch processing
+- End-to-end outbound sales pipeline automation
 
 ## License
 
